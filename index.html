@@ -1,1 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voice-Leading Chord Metronome (3 Voices)</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body{
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
+      background: Canvas; color: CanvasText;
+    }
+    .card{
+      width:min(980px, 100%); border:1px solid color-mix(in oklab, CanvasText 20%, transparent);
+      border-radius:18px; padding:18px 18px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.10);
+    }
+    .top{ display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+    h1{ font-size:18px; margin:0 0 6px; letter-spacing:.2px;}
+    .sub{ opacity:.8; font-size:13px; margin:0; line-height:1.35; }
+    .grid{ display:grid; gap:12px; grid-template-columns: repeat(12, minmax(0,1fr)); margin-top:14px; }
+    .field{
+      grid-column: span 3;
+      border:1px solid color-mix(in oklab, CanvasText 18%, transparent);
+      border-radius:14px; padding:10px 10px 8px;
+      background: color-mix(in oklab, Canvas 92%, CanvasText 8%);
+    }
+    .field.wide{ grid-column: span 6; }
+    .field.tall{ grid-column: span 12; }
+    label{ display:block; font-size:12px; opacity:.8; margin-bottom:6px; }
+    select,input[type="range"],input[type="number"]{ width:100%; }
+    .row{ display:flex; gap:10px; align-items:center; }
+    .btns{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    button{
+      border:1px solid color-mix(in oklab, CanvasText 22%, transparent);
+      background: color-mix(in oklab, Canvas 86%, CanvasText 14%);
+      color: CanvasText;
+      border-radius:12px; padding:10px 14px; font-weight:600; cursor:pointer;
+    }
+    button.primary{
+      background: color-mix(in oklab, CanvasText 18%, Canvas 82%);
+    }
+    button:disabled{ opacity:.6; cursor:not-allowed; }
+    .pill{
+      display:inline-flex; gap:8px; align-items:center;
+      border:1px solid color-mix(in oklab, CanvasText 20%, transparent);
+      border-radius:999px; padding:8px 12px; font-size:12px; opacity:.95;
+      background: color-mix(in oklab, Canvas 92%, CanvasText 8%);
+    }
+    .big{
+      font-size:28px; font-weight:800; margin:10px 0 2px; letter-spacing:.2px;
+    }
+    .small{ font-size:13px; opacity:.85; margin:0; line-height:1.4;}
+    .kbd{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      padding:2px 8px; border-radius:8px;
+      border:1px solid color-mix(in oklab, CanvasText 22%, transparent);
+      background: color-mix(in oklab, Canvas 88%, CanvasText 12%);
+      font-size:12px;
+    }
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border:1px dashed color-mix(in oklab, CanvasText 25%, transparent);
+      border-radius:14px;
+      padding:12px;
+      background: color-mix(in oklab, Canvas 94%, CanvasText 6%);
+    }
+    .hint{ font-size:12px; opacity:.75; margin-top:6px; }
+    .checkbox{
+      display:flex; gap:10px; align-items:center; font-size:13px; opacity:.9;
+      user-select:none;
+    }
+    input[type="checkbox"]{ transform: translateY(1px); }
+    @media (max-width: 820px){
+      .field{ grid-column: span 6; }
+      .field.wide{ grid-column: span 12; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="top">
+      <div>
+        <h1>Metronome + 3-Voice Chord Selector (minimal movement every 4 beats)</h1>
+        <p class="sub">
+          Picks a diatonic triad in the selected <span class="kbd">Key</span> and <span class="kbd">Mode</span>.
+          Every 4 beats, it chooses the inversion/voicing that minimizes total voice movement across 3 voices.
+          Suitable for GitHub Pages (single <span class="kbd">index.html</span> file).
+        </p>
+      </div>
+      <div class="btns">
+        <button id="startBtn" class="primary">Start</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <span class="pill">Beat: <span id="beatReadout" class="kbd">–</span></span>
+        <span class="pill">Bar: <span id="barReadout" class="kbd">–</span></span>
+      </div>
+    </div>
 
+    <div class="grid">
+      <div class="field">
+        <label for="keySel">Key</label>
+        <select id="keySel"></select>
+        <div class="hint">All 12 notes included.</div>
+      </div>
+
+      <div class="field">
+        <label for="modeSel">Mode</label>
+        <select id="modeSel">
+          <option value="major">Major</option>
+          <option value="natural_minor">Natural minor</option>
+        </select>
+        <div class="hint">Diatonic triads only.</div>
+      </div>
+
+      <div class="field">
+        <label for="bpm">BPM</label>
+        <input id="bpm" type="number" min="30" max="260" value="92" step="1" />
+        <div class="hint">Click track speed.</div>
+      </div>
+
+      <div class="field">
+        <label for="swing">Click accent</label>
+        <select id="accentSel">
+          <option value="bar">Accent beat 1</option>
+          <option value="none">No accent</option>
+        </select>
+        <div class="hint">A louder click on beat 1.</div>
+      </div>
+
+      <div class="field wide">
+        <label>3-voice register (MIDI note ranges)</label>
+        <div class="row">
+          <div style="flex:1">
+            <label for="lowRange" style="margin:0 0 6px">Low voice min</label>
+            <input id="lowRange" type="range" min="36" max="72" value="48" />
+          </div>
+          <div style="width:70px; text-align:right"><span class="kbd" id="lowRangeVal"></span></div>
+          <div style="flex:1">
+            <label for="highRange" style="margin:0 0 6px">High voice max</label>
+            <input id="highRange" type="range" min="60" max="96" value="79" />
+          </div>
+          <div style="width:70px; text-align:right"><span class="kbd" id="highRangeVal"></span></div>
+        </div>
+        <div class="hint">Voices are kept in close position, ordered Low ≤ Mid ≤ High.</div>
+      </div>
+
+      <div class="field">
+        <label>Sound</label>
+        <div class="checkbox"><input id="clickOn" type="checkbox" checked /> Metronome click</div>
+        <div class="checkbox"><input id="chordOn" type="checkbox" /> Play chord on bar (short)</div>
+        <div class="hint">Browser may require a user gesture (press Start).</div>
+      </div>
+
+      <div class="field tall">
+        <label>Now</label>
+        <div class="big" id="chordTitle">–</div>
+        <p class="small" id="chordSubtitle">Press Start.</p>
+      </div>
+
+      <div class="field tall">
+        <label>Voicing + movement details</label>
+        <div class="mono" id="debug">–</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ---------- Music helpers ----------
+  const NOTE_NAMES_SHARP = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+  const ROMAN_MAJOR = ["I","ii","iii","IV","V","vi","vii°"];
+  const ROMAN_NMIN  = ["i","ii°","III","iv","v","VI","VII"];
+  // Scale degrees (semitones) from tonic
+  const SCALE_MAJOR = [0,2,4,5,7,9,11];
+  const SCALE_NMIN  = [0,2,3,5,7,8,10];
+
+  function pc(n){ return ((n % 12) + 12) % 12; }
+
+  function midiToName(m){
+    const name = NOTE_NAMES_SHARP[pc(m)];
+    const oct = Math.floor(m/12) - 1;
+    return `${name}${oct}`;
+  }
+
+  function triadFromScale(scaleSemis, degreeIndex){
+    // diatonic triad: root, third, fifth (stacked thirds) in the scale
+    const deg = (i) => scaleSemis[(degreeIndex + i) % 7];
+    const root = deg(0);
+    const third = deg(2);
+    const fifth = deg(4);
+    // Return pitch classes relative to tonic (0..11)
+    return [root, third, fifth];
+  }
+
+  function chordQualityFromTriad(rootPc, thirdPc, fifthPc){
+    // Identify triad quality by intervals from root
+    const i3 = pc(thirdPc - rootPc);
+    const i5 = pc(fifthPc - rootPc);
+    if (i3 === 4 && i5 === 7) return "maj";
+    if (i3 === 3 && i5 === 7) return "min";
+    if (i3 === 3 && i5 === 6) return "dim";
+    if (i3 === 4 && i5 === 8) return "aug";
+    return "triad";
+  }
+
+  function chordName(tonicPc, triadRel){
+    const root = pc(tonicPc + triadRel[0]);
+    const third = pc(tonicPc + triadRel[1]);
+    const fifth = pc(tonicPc + triadRel[2]);
+    const qual = chordQualityFromTriad(root, third, fifth);
+    const rootName = NOTE_NAMES_SHARP[root];
+    if (qual === "maj") return rootName;
+    if (qual === "min") return rootName + "m";
+    if (qual === "dim") return rootName + "dim";
+    if (qual === "aug") return rootName + "aug";
+    return rootName;
+  }
+
+  // Generate candidate 3-note voicings for a chord (triad pitch classes), constrained to:
+  // - three distinct chord tones (one each)
+  // - ordered voices (low <= mid <= high)
+  // - within [lowMin, highMax]
+  // - "close position" preference by limiting max spread
+  function generateVoicingCandidates(triadPcsAbs, lowMin, highMax){
+    const pcsAbs = triadPcsAbs.slice(); // length 3, absolute pitch classes
+    // Base octave search around middle C region:
+    const octaves = [];
+    for (let o = -1; o <= 6; o++) octaves.push(o);
+
+    // All permutations of assigning chord tones to voices (S/A/T order will be low-mid-high here)
+    const perms = [
+      [0,1,2],[0,2,1],
+      [1,0,2],[1,2,0],
+      [2,0,1],[2,1,0],
+    ];
+
+    const candidates = [];
+    const maxSpread = 19; // in semitones (~an octave + fifth). keeps it "3-voice close-ish"
+    for (const p of perms){
+      const pcsL = pcsAbs[p[0]];
+      const pcsM = pcsAbs[p[1]];
+      const pcsH = pcsAbs[p[2]];
+
+      // brute force octave placement
+      for (const oL of octaves){
+        const nL = pcsL + 12*oL;
+        if (nL < lowMin - 24 || nL > highMax + 24) continue;
+        for (const oM of octaves){
+          const nM = pcsM + 12*oM;
+          for (const oH of octaves){
+            const nH = pcsH + 12*oH;
+
+            // within global register
+            if (nL < lowMin || nH > highMax) continue;
+
+            // order (close position-ish)
+            if (!(nL <= nM && nM <= nH)) continue;
+
+            // spread constraint
+            if ((nH - nL) > maxSpread) continue;
+
+            // ensure they are not all same pitch (shouldn't happen with distinct pcs, but octave collisions can)
+            if ((nL === nM) || (nM === nH) || (nL === nH)) continue;
+
+            candidates.push([nL,nM,nH]);
+          }
+        }
+      }
+    }
+
+    // De-duplicate (different perm/oct combos can collide)
+    const seen = new Set();
+    const uniq = [];
+    for (const c of candidates){
+      const key = c.join(",");
+      if (!seen.has(key)){
+        seen.add(key);
+        uniq.push(c);
+      }
+    }
+    return uniq;
+  }
+
+  function movementCost(prev, next){
+    if (!prev) return 0;
+    return Math.abs(next[0]-prev[0]) + Math.abs(next[1]-prev[1]) + Math.abs(next[2]-prev[2]);
+  }
+
+  function pickBestVoicingForChord(triadAbsPcs, prevVoicing, lowMin, highMax){
+    const candidates = generateVoicingCandidates(triadAbsPcs, lowMin, highMax);
+    if (candidates.length === 0){
+      // fallback: expand register by a bit if user picked a too-tight range
+      const candidates2 = generateVoicingCandidates(triadAbsPcs, lowMin-12, highMax+12);
+      if (candidates2.length === 0) return { voicing:null, cost: Infinity, tried: 2, count: 0 };
+      let best = candidates2[0], bestCost = movementCost(prevVoicing, best);
+      for (const c of candidates2){
+        const cost = movementCost(prevVoicing, c);
+        if (cost < bestCost){ best = c; bestCost = cost; }
+      }
+      return { voicing: best, cost: bestCost, tried: 2, count: candidates2.length };
+    }
+
+    let best = candidates[0], bestCost = movementCost(prevVoicing, best);
+    for (const c of candidates){
+      const cost = movementCost(prevVoicing, c);
+      if (cost < bestCost){ best = c; bestCost = cost; }
+    }
+    return { voicing: best, cost: bestCost, tried: 1, count: candidates.length };
+  }
+
+  // ---------- Chord selection ----------
+  function diatonicTriads(mode){
+    const scale = (mode === "major") ? SCALE_MAJOR : SCALE_NMIN;
+    return Array.from({length:7}, (_,deg) => triadFromScale(scale, deg));
+  }
+
+  function chooseNextDegree(prevDeg){
+    // simple musical bias: avoid same chord too often, slight bias toward V/i/V
+    const weights = [1,1,1,1,1,1,1];
+    if (prevDeg != null){
+      weights[prevDeg] = 0.35; // discourage repeats
+      // encourage stepwise movement
+      weights[(prevDeg+1)%7] += 0.25;
+      weights[(prevDeg+6)%7] += 0.25;
+    }
+    // normalize & sample
+    const sum = weights.reduce((a,b)=>a+b,0);
+    let r = Math.random()*sum;
+    for (let i=0;i<7;i++){
+      r -= weights[i];
+      if (r <= 0) return i;
+    }
+    return Math.floor(Math.random()*7);
+  }
+
+  // ---------- Audio (metronome + optional chord) ----------
+  let audioCtx = null;
+  function ensureAudio(){
+    if (!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtx;
+  }
+
+  function clickSound(time, accented){
+    const ctx = ensureAudio();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = accented ? 1800 : 1200;
+    gain.gain.value = 0.0001;
+    osc.connect(gain).connect(ctx.destination);
+
+    const t0 = time;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(accented ? 0.12 : 0.08, t0 + 0.001);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.03);
+    osc.start(t0);
+    osc.stop(t0 + 0.04);
+  }
+
+  function playChord(time, midiNotes){
+    const ctx = ensureAudio();
+    const out = ctx.createGain();
+    out.gain.value = 0.10;
+    out.connect(ctx.destination);
+
+    const now = time;
+    for (const m of midiNotes){
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      const freq = 440 * Math.pow(2, (m - 69) / 12);
+      osc.frequency.value = freq;
+      g.gain.value = 0.0001;
+      osc.connect(g).connect(out);
+
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.15, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+      osc.start(now);
+      osc.stop(now + 0.30);
+    }
+  }
+
+  // Scheduler (lookahead)
+  let isRunning = false;
+  let current16th = 0; // not used; we schedule beats
+  let nextNoteTime = 0.0;
+  let timerID = null;
+  const lookahead = 25.0; // ms
+  const scheduleAheadTime = 0.10; // s
+
+  let beatInBar = 0; // 0..3
+  let barCount = 0;
+
+  // Musical state
+  let tonicPc = 0;
+  let mode = "major";
+  let triads = diatonicTriads(mode);
+  let prevDegree = null;
+  let prevVoicing = null;
+
+  // UI
+  const keySel = document.getElementById("keySel");
+  const modeSel = document.getElementById("modeSel");
+  const bpmEl = document.getElementById("bpm");
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn = document.getElementById("stopBtn");
+  const beatReadout = document.getElementById("beatReadout");
+  const barReadout = document.getElementById("barReadout");
+  const chordTitle = document.getElementById("chordTitle");
+  const chordSubtitle = document.getElementById("chordSubtitle");
+  const debugEl = document.getElementById("debug");
+  const lowRange = document.getElementById("lowRange");
+  const highRange = document.getElementById("highRange");
+  const lowRangeVal = document.getElementById("lowRangeVal");
+  const highRangeVal = document.getElementById("highRangeVal");
+  const clickOn = document.getElementById("clickOn");
+  const chordOn = document.getElementById("chordOn");
+  const accentSel = document.getElementById("accentSel");
+
+  // Populate keys
+  NOTE_NAMES_SHARP.forEach((n, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = n;
+    keySel.appendChild(opt);
+  });
+  keySel.value = "0";
+
+  function refreshRanges(){
+    let lo = Number(lowRange.value);
+    let hi = Number(highRange.value);
+    // ensure sensible ordering
+    if (hi < lo + 6) hi = lo + 6;
+    if (hi > Number(highRange.max)) hi = Number(highRange.max);
+    highRange.value = String(hi);
+    lowRangeVal.textContent = `${lo} (${midiToName(lo)})`;
+    highRangeVal.textContent = `${hi} (${midiToName(hi)})`;
+  }
+  refreshRanges();
+  lowRange.addEventListener("input", refreshRanges);
+  highRange.addEventListener("input", refreshRanges);
+
+  function setKeyModeFromUI(){
+    tonicPc = Number(keySel.value);
+    mode = modeSel.value;
+    triads = diatonicTriads(mode);
+  }
+
+  function describeChord(deg, voicing, cost, tried, count){
+    const roman = (mode === "major") ? ROMAN_MAJOR[deg] : ROMAN_NMIN[deg];
+    const name = chordName(tonicPc, triads[deg]);
+
+    const pcsAbs = triads[deg].map(x => pc(tonicPc + x));
+    const pcsNames = pcsAbs.map(p => NOTE_NAMES_SHARP[p]).join(" ");
+    const vNames = voicing ? voicing.map(midiToName).join("  |  ") : "—";
+
+    chordTitle.textContent = `${name}  (${roman})`;
+    chordSubtitle.textContent = `Chord tones: ${pcsNames} · Voicing: ${vNames}`;
+    debugEl.textContent =
+`Key: ${NOTE_NAMES_SHARP[tonicPc]} · Mode: ${mode.replace("_"," ")}
+Degree: ${deg+1} (${roman}) · Candidate voicings checked: ${count} (pass ${tried})
+Prev voicing: ${prevVoicing ? prevVoicing.map(midiToName).join("  |  ") : "—"}
+New  voicing: ${voicing ? voicing.map(midiToName).join("  |  ") : "—"}
+Total movement (L+M+H): ${Number.isFinite(cost) ? cost : "—"} semitones
+Register: [${Number(lowRange.value)}..${Number(highRange.value)}] (global)
+Tip: tighten/expand register to change the “voice-leading feel”.`;
+  }
+
+  function chooseAndApplyNewChord(){
+    const lowMin = Number(lowRange.value);
+    const highMax = Number(highRange.value);
+
+    const deg = chooseNextDegree(prevDegree);
+    const triadAbs = triads[deg].map(x => pc(tonicPc + x)); // absolute pitch classes
+    const { voicing, cost, tried, count } = pickBestVoicingForChord(triadAbs, prevVoicing, lowMin, highMax);
+
+    prevDegree = deg;
+    prevVoicing = voicing;
+
+    describeChord(deg, voicing, cost, tried, count);
+
+    // optional chord sound
+    if (chordOn.checked && voicing && audioCtx){
+      playChord(nextNoteTime, voicing);
+    }
+  }
+
+  function nextBeat(){
+    const secondsPerBeat = 60.0 / Math.max(30, Math.min(260, Number(bpmEl.value) || 92));
+    nextNoteTime += secondsPerBeat;
+
+    // advance beat/bar
+    beatInBar = (beatInBar + 1) % 4;
+    if (beatInBar === 0) barCount += 1;
+
+    // UI beat display (1..4)
+    beatReadout.textContent = String(beatInBar + 1);
+    barReadout.textContent = String(barCount + 1);
+
+    // every 4 beats (on beat 1), choose chord/voicing
+    if (beatInBar === 0){
+      chooseAndApplyNewChord();
+    }
+  }
+
+  function scheduleBeat(beatTime, beatNumberInBar){
+    if (clickOn.checked){
+      const accented = (accentSel.value === "bar") && (beatNumberInBar === 0);
+      clickSound(beatTime, accented);
+    }
+  }
+
+  function scheduler(){
+    if (!audioCtx) return;
+    while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime){
+      scheduleBeat(nextNoteTime, beatInBar);
+      nextBeat();
+    }
+  }
+
+  function start(){
+    if (isRunning) return;
+    setKeyModeFromUI();
+    ensureAudio();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+
+    isRunning = true;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+
+    // reset counters
+    beatInBar = 3;      // so first scheduled beat advances to 0 (beat 1)
+    barCount = 0;
+    prevDegree = null;
+    prevVoicing = null;
+
+    nextNoteTime = audioCtx.currentTime + 0.05;
+
+    // immediately pick first chord on first bar downbeat
+    chordTitle.textContent = "—";
+    chordSubtitle.textContent = "Running…";
+    debugEl.textContent = "—";
+
+    timerID = setInterval(scheduler, lookahead);
+  }
+
+  function stop(){
+    if (!isRunning) return;
+    isRunning = false;
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    if (timerID) clearInterval(timerID);
+    timerID = null;
+
+    beatReadout.textContent = "–";
+    barReadout.textContent = "–";
+    chordSubtitle.textContent = "Stopped.";
+  }
+
+  // UI events
+  startBtn.addEventListener("click", start);
+  stopBtn.addEventListener("click", stop);
+
+  keySel.addEventListener("change", () => { if (!isRunning) setKeyModeFromUI(); });
+  modeSel.addEventListener("change", () => { if (!isRunning) setKeyModeFromUI(); });
+
+  // Keep range sane even when sliders cross
+  lowRange.addEventListener("change", () => {
+    if (Number(highRange.value) < Number(lowRange.value) + 6){
+      highRange.value = String(Number(lowRange.value) + 6);
+      refreshRanges();
+    }
+  });
+  highRange.addEventListener("change", () => {
+    if (Number(highRange.value) < Number(lowRange.value) + 6){
+      lowRange.value = String(Number(highRange.value) - 6);
+      refreshRanges();
+    }
+  });
+
+  // Spacebar to start/stop
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space"){
+      e.preventDefault();
+      isRunning ? stop() : start();
+    }
+  });
+
+  // initial UI state
+  chordTitle.textContent = "Ready";
+  chordSubtitle.textContent = "Press Start (or Space).";
+})();
+</script>
+</body>
+</html>
