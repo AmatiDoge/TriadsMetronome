@@ -48,6 +48,12 @@
       background: color-mix(in oklab, Canvas 92%, CanvasText 8%);
     }
     .big{ font-size:28px; font-weight:800; margin:10px 0 2px; letter-spacing:.2px; }
+    .inversion{
+      font-size:22px;
+      font-weight:800;
+      margin: 6px 0 2px;
+      letter-spacing: 0.3px;
+    }
     .small{ font-size:13px; opacity:.85; margin:0; line-height:1.4;}
     .kbd{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -156,6 +162,7 @@
       <div class="field tall">
         <label>Now</label>
         <div class="big" id="chordTitle">Ready</div>
+        <div class="inversion" id="inversionText">–</div>
         <p class="small" id="chordSubtitle">Press Start (or Space).</p>
       </div>
 
@@ -265,8 +272,7 @@
           const hi = Math.max(f3,f2,f1);
           if ((hi - lo) > maxSpan) continue;
 
-          // Guitar reality: pitches must ascend by string (3 is lowest pitch, then 2, then 1)
-          // In standard tuning this is true for most frets, but enforce it anyway:
+          // Enforce ascending pitch by string: 3 is lowest pitch, then 2, then 1
           if (!(m3 < m2 && m2 < m1)) continue;
 
           const inv = inversionFromBassPc(chordAbsPcs, pc(m3));
@@ -285,22 +291,22 @@
   }
 
   // Cost: sum of fret movement per string + small penalty for "shifting position"
-  // (encourages staying in the same neck area).
   function voicingCost(prevFrets, nextFrets){
     if (!prevFrets) return 0;
-    const move = Math.abs(nextFrets[0]-prevFrets[0]) + Math.abs(nextFrets[1]-prevFrets[1]) + Math.abs(nextFrets[2]-prevFrets[2]);
+    const move =
+      Math.abs(nextFrets[0]-prevFrets[0]) +
+      Math.abs(nextFrets[1]-prevFrets[1]) +
+      Math.abs(nextFrets[2]-prevFrets[2]);
+
     const prevPos = Math.min(...prevFrets);
     const nextPos = Math.min(...nextFrets);
-    const shiftPenalty = 0.35 * Math.abs(nextPos - prevPos); // tweakable
+    const shiftPenalty = 0.35 * Math.abs(nextPos - prevPos);
     return move + shiftPenalty;
   }
 
   function pickBestVoicing(chordAbsPcs, prevFrets, minFret, maxFret, maxSpan){
     const all = generateTriadVoicingsOn123(chordAbsPcs, minFret, maxFret, maxSpan);
-
-    // We ONLY allow root/1st/2nd inversions — which is exactly what inv=0/1/2 already represents.
-    // (No other voicings are generated anyway, since we require all 3 chord tones and fixed strings.)
-    if (all.length === 0) return { best:null, tried: all.length };
+    if (all.length === 0) return { best:null, tried: 0, cost: Infinity };
 
     let best = all[0];
     let bestC = voicingCost(prevFrets, best.frets);
@@ -387,6 +393,7 @@
   const beatReadout = document.getElementById("beatReadout");
   const barReadout = document.getElementById("barReadout");
   const chordTitle = document.getElementById("chordTitle");
+  const inversionText = document.getElementById("inversionText");
   const chordSubtitle = document.getElementById("chordSubtitle");
   const debugEl = document.getElementById("debug");
   const clickOn = document.getElementById("clickOn");
@@ -431,7 +438,7 @@
   let isRunning = false;
   let nextNoteTime = 0.0;
   let timerID = null;
-  const lookahead = 25.0;        // ms
+  const lookahead = 25.0;         // ms
   const scheduleAheadTime = 0.10; // s
 
   let beatInBar = 0; // 0..3
@@ -452,9 +459,9 @@
   }
 
   function inversionLabel(inv){
-    if (inv === 0) return "Root position";
-    if (inv === 1) return "1st inversion";
-    if (inv === 2) return "2nd inversion";
+    if (inv === 0) return "ROOT POSITION";
+    if (inv === 1) return "1st INVERSION";
+    if (inv === 2) return "2nd INVERSION";
     return "—";
   }
 
@@ -464,6 +471,7 @@
 
     if (!best){
       chordTitle.textContent = `${name} (${roman})`;
+      inversionText.textContent = "—";
       chordSubtitle.textContent = `No playable close-position triad found in your fret window.`;
       debugEl.textContent =
 `Strings: 3–2–1 only
@@ -480,8 +488,10 @@ Tried ${tried} candidates.`;
       : 0;
 
     chordTitle.textContent = `${name}  (${roman})`;
-    chordSubtitle.textContent =
-      `${inversionLabel(best.inv)} · frets (G–B–E): ${f3}–${f2}–${f1}`;
+    inversionText.textContent = inversionLabel(best.inv);
+    chordSubtitle.textContent = `frets (G–B–E): ${f3}–${f2}–${f1}`;
+
+    const { span } = clampConstraints();
 
     debugEl.textContent =
 `Key: ${NOTE_NAMES_SHARP[tonicPc]} · Mode: ${mode.replace("_"," ")}
@@ -489,7 +499,7 @@ Strings fixed: 3(G) → 2(B) → 1(E)
 Chord tones on strings: ${noteNameFromPc(m3)}  ${noteNameFromPc(m2)}  ${noteNameFromPc(m1)}
 Notes: ${midiToName(m3)} | ${midiToName(m2)} | ${midiToName(m1)}
 Frets: ${f3} | ${f2} | ${f1}
-Close-position span (max fret - min fret): ${Math.max(f1,f2,f3) - Math.min(f1,f2,f3)} (limit ${clampConstraints().span})
+Close-position span (max fret - min fret): ${Math.max(f1,f2,f3) - Math.min(f1,f2,f3)} (limit ${span})
 Candidates checked: ${tried}
 Movement this change (sum fret diffs): ${move}
 Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixed(2) : "—"}`;
@@ -564,6 +574,7 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
     nextNoteTime = audioCtx.currentTime + 0.05;
 
     chordTitle.textContent = "Running…";
+    inversionText.textContent = "—";
     chordSubtitle.textContent = "Strings 1–2–3 only.";
     debugEl.textContent = "—";
 
@@ -581,6 +592,7 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
     beatReadout.textContent = "–";
     barReadout.textContent = "–";
     chordTitle.textContent = "Stopped";
+    inversionText.textContent = "—";
     chordSubtitle.textContent = "Press Start (or Space).";
   }
 
