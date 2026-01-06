@@ -106,10 +106,10 @@
       <div>
         <h1>Guitar Minimal-Movement Triads (Strings 1–2–3 only)</h1>
         <p class="sub">
-          Every 4 beats: choose a <span class="kbd">diatonic triad</span> in the selected <span class="kbd">Key</span>/<span class="kbd">Mode</span>,
-          and pick the <span class="kbd">root / 1st / 2nd inversion</span> voicing on strings <span class="kbd">1–2–3</span>
-          that minimizes total fret movement while staying in a tight position.
-          The <span class="kbd">next chord</span> is always visible.
+          Triads switch <span class="kbd">ON THE BEAT</span> (on beat 1 every bar).
+          Every 4 beats: choose a diatonic triad in the selected key/mode, and pick the root/1st/2nd inversion
+          voicing on strings 1–2–3 that minimizes total fret movement while staying in a tight position.
+          The next chord is always visible.
         </p>
       </div>
       <div class="btns">
@@ -175,11 +175,10 @@
       <div class="field">
         <label>Sound</label>
         <div class="checkbox"><input id="clickOn" type="checkbox" checked /> Metronome click</div>
-        <div class="checkbox"><input id="chordOn" type="checkbox" /> Play triad on bar (short)</div>
+        <div class="checkbox"><input id="chordOn" type="checkbox" /> Play triad on beat 1 (short)</div>
         <div class="hint">Press Start once to enable audio.</div>
       </div>
 
-      <!-- CURRENT + NEXT panels -->
       <div class="split">
         <div class="panel current">
           <div class="muted">CURRENT (play now)</div>
@@ -193,7 +192,7 @@
           <div class="big" id="nextChordTitle">–</div>
           <div class="inversion" id="nextInversionText">–</div>
           <p class="small" id="nextChordSubtitle">–</p>
-          <div class="hint">Next chord is pre-selected and shown immediately after each change.</div>
+          <div class="hint">Next chord is pre-selected and visible at all times.</div>
         </div>
       </div>
 
@@ -224,7 +223,6 @@
     const oct = Math.floor(m/12) - 1;
     return `${name}${oct}`;
   }
-  function noteNameFromPc(p){ return NOTE_NAMES_SHARP[pc(p)]; }
 
   function triadFromScale(scaleSemis, degreeIndex){
     const deg = (i) => scaleSemis[(degreeIndex + i) % 7];
@@ -289,15 +287,17 @@
           const m1 = midiForStringFret(1, f1);
           if (!chordSet.has(pc(m1))) continue;
 
+          // no doubling: must contain all 3 chord tones
           const pcsUsed = [pc(m3), pc(m2), pc(m1)];
-          const uniq = new Set(pcsUsed);
-          if (uniq.size !== 3) continue; // no doubling
+          if (new Set(pcsUsed).size !== 3) continue;
 
+          // close position: fret-span constraint
           const lo = Math.min(f3,f2,f1);
           const hi = Math.max(f3,f2,f1);
-          if ((hi - lo) > maxSpan) continue; // close position
+          if ((hi - lo) > maxSpan) continue;
 
-          if (!(m3 < m2 && m2 < m1)) continue; // ascending pitch by string
+          // ascending pitch by string
+          if (!(m3 < m2 && m2 < m1)) continue;
 
           const inv = inversionFromBassPc(chordAbsPcs, pc(m3));
           if (inv == null) continue;
@@ -316,6 +316,7 @@
       Math.abs(nextFrets[1]-prevFrets[1]) +
       Math.abs(nextFrets[2]-prevFrets[2]);
 
+    // small extra penalty for shifting the whole hand position
     const prevPos = Math.min(...prevFrets);
     const nextPos = Math.min(...nextFrets);
     const shiftPenalty = 0.35 * Math.abs(nextPos - prevPos);
@@ -342,8 +343,8 @@
   function chooseNextDegree(prevDeg){
     const w = [1,1,1,1,1,1,1];
     if (prevDeg != null){
-      w[prevDeg] = 0.35;
-      w[(prevDeg+1)%7] += 0.25;
+      w[prevDeg] = 0.35;          // discourage repeats
+      w[(prevDeg+1)%7] += 0.25;   // stepwise
       w[(prevDeg+6)%7] += 0.25;
     }
     const sum = w.reduce((a,b)=>a+b,0);
@@ -371,12 +372,11 @@
     gain.gain.value = 0.0001;
     osc.connect(gain).connect(ctx.destination);
 
-    const t0 = time;
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(accented ? 0.12 : 0.08, t0 + 0.001);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.03);
-    osc.start(t0);
-    osc.stop(t0 + 0.04);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(accented ? 0.12 : 0.08, time + 0.001);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.03);
+    osc.start(time);
+    osc.stop(time + 0.04);
   }
 
   function playTriad(time, midiNotes){
@@ -395,10 +395,10 @@
 
       g.gain.setValueAtTime(0.0001, time);
       g.gain.exponentialRampToValueAtTime(0.15, time + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, time + 0.28);
+      g.gain.exponentialRampToValueAtTime(0.0001, time + 0.22);
 
       osc.start(time);
-      osc.stop(time + 0.30);
+      osc.stop(time + 0.24);
     }
   }
 
@@ -473,13 +473,18 @@
   let mode = "major";
   let triads = diatonicTriads(mode);
 
-  // CURRENT state (what you're playing now)
+  // CURRENT state
   let currentDegree = null;
-  let currentVoicing = null; // {frets, midis, inv}
+  let currentVoicing = null;
 
   // NEXT state (always visible)
   let nextDegree = null;
-  let nextVoicing = null;    // best voicing chosen based on currentVoicing
+  let nextVoicing = null;
+
+  function secondsPerBeat(){
+    const bpm = Math.max(30, Math.min(260, Number(bpmEl.value) || 92));
+    return 60.0 / bpm;
+  }
 
   function setKeyModeFromUI(){
     tonicPc = Number(keySel.value);
@@ -527,49 +532,53 @@
 
     nextDegree = deg;
     nextVoicing = best;
+
     formatChordPanel(nextDegree, nextVoicing, nextChordTitle, nextInversionText, nextChordSubtitle);
   }
 
-  function applyNextAsCurrent(){
+  function applyNextAsCurrent(atTime){
+    const prevFrets = currentVoicing ? currentVoicing.frets : null;
+
     currentDegree = nextDegree;
     currentVoicing = nextVoicing;
 
     formatChordPanel(currentDegree, currentVoicing, chordTitle, inversionText, chordSubtitle);
 
-    // Debug info
+    if (chordOn.checked && currentVoicing && audioCtx){
+      playTriad(atTime, currentVoicing.midis);
+    }
+
+    // debug with movement
     if (!currentVoicing){
       debugEl.textContent = "No playable voicing found. Adjust fret window/span.";
     } else {
       const [f3,f2,f1] = currentVoicing.frets;
       const [m3,m2,m1] = currentVoicing.midis;
-
-      const move = (currentVoicing && nextVoicing && currentVoicing !== nextVoicing) ? 0 : 0; // placeholder; we show real move below
       const spanNow = Math.max(f1,f2,f3) - Math.min(f1,f2,f3);
       const { span } = clampConstraints();
+      const move = prevFrets
+        ? (Math.abs(f3-prevFrets[0]) + Math.abs(f2-prevFrets[1]) + Math.abs(f1-prevFrets[2]))
+        : 0;
 
       debugEl.textContent =
-`Key: ${NOTE_NAMES_SHARP[tonicPc]} · Mode: ${mode.replace("_"," ")}
-Strings fixed: 3(G) → 2(B) → 1(E)
+`Triads switch ON BEAT 1
+Key: ${NOTE_NAMES_SHARP[tonicPc]} · Mode: ${mode.replace("_"," ")}
+Strings: 3(G) → 2(B) → 1(E)
 Notes: ${midiToName(m3)} | ${midiToName(m2)} | ${midiToName(m1)}
 Frets: ${f3} | ${f2} | ${f1}
 Close-position span: ${spanNow} (limit ${span})
-Next chord is shown on the right.`;
+Movement (sum fret diffs): ${move}
+Next chord stays visible.`;
     }
 
-    // Optional chord sound on downbeat
-    if (chordOn.checked && currentVoicing && audioCtx){
-      playTriad(nextNoteTime, currentVoicing.midis);
-    }
-
-    // Immediately compute and display the next chord
+    // immediately pick/show the next chord
     computeNextFromCurrent();
   }
 
   // ---------- Beat scheduling ----------
   function nextBeat(){
-    const bpm = Math.max(30, Math.min(260, Number(bpmEl.value) || 92));
-    const secondsPerBeat = 60.0 / bpm;
-    nextNoteTime += secondsPerBeat;
+    const spb = secondsPerBeat();
+    nextNoteTime += spb;
 
     beatInBar = (beatInBar + 1) % 4;
     if (beatInBar === 0) barCount += 1;
@@ -577,9 +586,9 @@ Next chord is shown on the right.`;
     beatReadout.textContent = String(beatInBar + 1);
     barReadout.textContent = String(barCount + 1);
 
-    // On downbeat (beat 1): promote NEXT -> CURRENT, then generate a new NEXT
+    // SWITCH ON THE DOWNBEAT (beat 1)
     if (beatInBar === 0){
-      applyNextAsCurrent();
+      applyNextAsCurrent(nextNoteTime);
     }
   }
 
@@ -609,25 +618,21 @@ Next chord is shown on the right.`;
     startBtn.disabled = true;
     stopBtn.disabled = false;
 
-    beatInBar = 3; // so first nextBeat -> 0 (downbeat)
+    beatInBar = 3; // so first nextBeat -> 0 (beat 1)
     barCount = 0;
 
     currentDegree = null;
     currentVoicing = null;
 
-    // Precompute NEXT immediately so it is always visible from the start
-    nextDegree = null;
-    nextVoicing = null;
     formatChordPanel(null, null, chordTitle, inversionText, chordSubtitle);
     formatChordPanel(null, null, nextChordTitle, nextInversionText, nextChordSubtitle);
 
     nextNoteTime = audioCtx.currentTime + 0.05;
 
-    // Set an initial "next" using no previous frets (free choice in window),
-    // then on the first downbeat it becomes current.
+    // Make NEXT visible immediately (before first switch)
     computeNextFromCurrent();
 
-    debugEl.textContent = "Running… next chord is visible on the right.";
+    debugEl.textContent = "Running… triads will switch on beat 1.";
 
     timerID = setInterval(scheduler, lookahead);
   }
@@ -661,7 +666,6 @@ Next chord is shown on the right.`;
   [minFretEl, maxFretEl, maxSpanEl].forEach(el => el.addEventListener("change", () => {
     clampConstraints();
     if (isRunning){
-      // re-evaluate NEXT immediately with new constraints
       computeNextFromCurrent();
     }
   }));
