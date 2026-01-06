@@ -1,3 +1,4 @@
+```html
 <!doctype html>
 <html lang="en">
 <head>
@@ -29,6 +30,23 @@
     }
     .field.wide{ grid-column: span 6; }
     .field.tall{ grid-column: span 12; }
+    .split{
+      grid-column: span 12;
+      display:grid;
+      gap:12px;
+      grid-template-columns: repeat(12, minmax(0,1fr));
+    }
+    .panel{
+      border:1px solid color-mix(in oklab, CanvasText 18%, transparent);
+      border-radius:14px; padding:12px;
+      background: color-mix(in oklab, Canvas 92%, CanvasText 8%);
+    }
+    .panel.current{ grid-column: span 7; }
+    .panel.next{ grid-column: span 5; }
+    @media (max-width: 900px){
+      .panel.current, .panel.next{ grid-column: span 12; }
+    }
+
     label{ display:block; font-size:12px; opacity:.8; margin-bottom:6px; }
     select,input[type="number"]{ width:100%; }
     .row{ display:flex; gap:10px; align-items:center; }
@@ -47,7 +65,7 @@
       border-radius:999px; padding:8px 12px; font-size:12px; opacity:.95;
       background: color-mix(in oklab, Canvas 92%, CanvasText 8%);
     }
-    .big{ font-size:28px; font-weight:800; margin:10px 0 2px; letter-spacing:.2px; }
+    .big{ font-size:28px; font-weight:800; margin:2px 0 2px; letter-spacing:.2px; }
     .inversion{
       font-size:22px;
       font-weight:800;
@@ -55,6 +73,7 @@
       letter-spacing: 0.3px;
     }
     .small{ font-size:13px; opacity:.85; margin:0; line-height:1.4;}
+    .muted{ font-size:12px; opacity:.75; margin:0 0 8px; }
     .kbd{
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       padding:2px 8px; border-radius:8px;
@@ -90,6 +109,7 @@
           Every 4 beats: choose a <span class="kbd">diatonic triad</span> in the selected <span class="kbd">Key</span>/<span class="kbd">Mode</span>,
           and pick the <span class="kbd">root / 1st / 2nd inversion</span> voicing on strings <span class="kbd">1–2–3</span>
           that minimizes total fret movement while staying in a tight position.
+          The <span class="kbd">next chord</span> is always visible.
         </p>
       </div>
       <div class="btns">
@@ -159,11 +179,22 @@
         <div class="hint">Press Start once to enable audio.</div>
       </div>
 
-      <div class="field tall">
-        <label>Now</label>
-        <div class="big" id="chordTitle">Ready</div>
-        <div class="inversion" id="inversionText">–</div>
-        <p class="small" id="chordSubtitle">Press Start (or Space).</p>
+      <!-- CURRENT + NEXT panels -->
+      <div class="split">
+        <div class="panel current">
+          <div class="muted">CURRENT (play now)</div>
+          <div class="big" id="chordTitle">Ready</div>
+          <div class="inversion" id="inversionText">–</div>
+          <p class="small" id="chordSubtitle">Press Start (or Space).</p>
+        </div>
+
+        <div class="panel next">
+          <div class="muted">NEXT (coming up)</div>
+          <div class="big" id="nextChordTitle">–</div>
+          <div class="inversion" id="nextInversionText">–</div>
+          <p class="small" id="nextChordSubtitle">–</p>
+          <div class="hint">Next chord is pre-selected and shown immediately after each change.</div>
+        </div>
       </div>
 
       <div class="field tall">
@@ -197,7 +228,7 @@
 
   function triadFromScale(scaleSemis, degreeIndex){
     const deg = (i) => scaleSemis[(degreeIndex + i) % 7];
-    return [deg(0), deg(2), deg(4)]; // root, third, fifth (relative to tonic)
+    return [deg(0), deg(2), deg(4)];
   }
 
   function chordQuality(rootPc, thirdPc, fifthPc){
@@ -215,7 +246,7 @@
     const third = pc(tonicPc + triadRel[1]);
     const fifth = pc(tonicPc + triadRel[2]);
     const qual = chordQuality(root, third, fifth);
-    const rootName = noteNameFromPc(root);
+    const rootName = NOTE_NAMES_SHARP[root];
     if (qual === "maj") return rootName;
     if (qual === "min") return rootName + "m";
     if (qual === "dim") return rootName + "dim";
@@ -234,18 +265,14 @@
     return open + fret;
   }
 
-  // Determine inversion by bass (string 3) pitch class.
-  // Return 0=root position, 1=1st inv, 2=2nd inv, or null if not a triad tone (shouldn't happen).
   function inversionFromBassPc(chordAbsPcs, bassPc){
-    const [r, t, f] = chordAbsPcs; // root, third, fifth pitch classes (absolute)
+    const [r, t, f] = chordAbsPcs;
     if (pc(bassPc) === pc(r)) return 0;
     if (pc(bassPc) === pc(t)) return 1;
     if (pc(bassPc) === pc(f)) return 2;
     return null;
   }
 
-  // Generate ALL playable close-position triads on strings 3-2-1 within a fret window,
-  // then label them by inversion (root/1st/2nd) according to the bass note (string 3).
   function generateTriadVoicingsOn123(chordAbsPcs, minFret, maxFret, maxSpan){
     const chordSet = new Set(chordAbsPcs.map(pc));
     const results = [];
@@ -262,35 +289,26 @@
           const m1 = midiForStringFret(1, f1);
           if (!chordSet.has(pc(m1))) continue;
 
-          // Require all three chord tones present (no doubling)
           const pcsUsed = [pc(m3), pc(m2), pc(m1)];
           const uniq = new Set(pcsUsed);
-          if (uniq.size !== 3) continue;
+          if (uniq.size !== 3) continue; // no doubling
 
-          // Close in position: fret span constraint
           const lo = Math.min(f3,f2,f1);
           const hi = Math.max(f3,f2,f1);
-          if ((hi - lo) > maxSpan) continue;
+          if ((hi - lo) > maxSpan) continue; // close position
 
-          // Enforce ascending pitch by string: 3 is lowest pitch, then 2, then 1
-          if (!(m3 < m2 && m2 < m1)) continue;
+          if (!(m3 < m2 && m2 < m1)) continue; // ascending pitch by string
 
           const inv = inversionFromBassPc(chordAbsPcs, pc(m3));
           if (inv == null) continue;
 
-          results.push({
-            frets: [f3,f2,f1],
-            midis: [m3,m2,m1],
-            inv
-          });
+          results.push({ frets:[f3,f2,f1], midis:[m3,m2,m1], inv });
         }
       }
     }
-
     return results;
   }
 
-  // Cost: sum of fret movement per string + small penalty for "shifting position"
   function voicingCost(prevFrets, nextFrets){
     if (!prevFrets) return 0;
     const move =
@@ -306,7 +324,7 @@
 
   function pickBestVoicing(chordAbsPcs, prevFrets, minFret, maxFret, maxSpan){
     const all = generateTriadVoicingsOn123(chordAbsPcs, minFret, maxFret, maxSpan);
-    if (all.length === 0) return { best:null, tried: 0, cost: Infinity };
+    if (all.length === 0) return { best:null, tried:0, cost:Infinity };
 
     let best = all[0];
     let bestC = voicingCost(prevFrets, best.frets);
@@ -317,15 +335,15 @@
         bestC = c;
       }
     }
-    return { best, tried: all.length, cost: bestC };
+    return { best, tried:all.length, cost:bestC };
   }
 
   // ---------- Chord choice (diatonic) ----------
   function chooseNextDegree(prevDeg){
     const w = [1,1,1,1,1,1,1];
     if (prevDeg != null){
-      w[prevDeg] = 0.35;           // discourage repeats
-      w[(prevDeg+1)%7] += 0.25;    // stepwise
+      w[prevDeg] = 0.35;
+      w[(prevDeg+1)%7] += 0.25;
       w[(prevDeg+6)%7] += 0.25;
     }
     const sum = w.reduce((a,b)=>a+b,0);
@@ -392,9 +410,15 @@
   const stopBtn = document.getElementById("stopBtn");
   const beatReadout = document.getElementById("beatReadout");
   const barReadout = document.getElementById("barReadout");
+
   const chordTitle = document.getElementById("chordTitle");
   const inversionText = document.getElementById("inversionText");
   const chordSubtitle = document.getElementById("chordSubtitle");
+
+  const nextChordTitle = document.getElementById("nextChordTitle");
+  const nextInversionText = document.getElementById("nextInversionText");
+  const nextChordSubtitle = document.getElementById("nextChordSubtitle");
+
   const debugEl = document.getElementById("debug");
   const clickOn = document.getElementById("clickOn");
   const chordOn = document.getElementById("chordOn");
@@ -438,8 +462,8 @@
   let isRunning = false;
   let nextNoteTime = 0.0;
   let timerID = null;
-  const lookahead = 25.0;         // ms
-  const scheduleAheadTime = 0.10; // s
+  const lookahead = 25.0;
+  const scheduleAheadTime = 0.10;
 
   let beatInBar = 0; // 0..3
   let barCount = 0;
@@ -449,8 +473,13 @@
   let mode = "major";
   let triads = diatonicTriads(mode);
 
-  let prevDegree = null;
-  let prevFrets = null;
+  // CURRENT state (what you're playing now)
+  let currentDegree = null;
+  let currentVoicing = null; // {frets, midis, inv}
+
+  // NEXT state (always visible)
+  let nextDegree = null;
+  let nextVoicing = null;    // best voicing chosen based on currentVoicing
 
   function setKeyModeFromUI(){
     tonicPc = Number(keySel.value);
@@ -465,65 +494,78 @@
     return "—";
   }
 
-  function describe(deg, best, tried, cost){
+  function formatChordPanel(deg, voicing, titleEl, invEl, subEl){
+    if (deg == null){
+      titleEl.textContent = "–";
+      invEl.textContent = "–";
+      subEl.textContent = "–";
+      return;
+    }
     const roman = (mode === "major") ? ROMAN_MAJOR[deg] : ROMAN_NMIN[deg];
     const name = chordName(tonicPc, triads[deg]);
 
-    if (!best){
-      chordTitle.textContent = `${name} (${roman})`;
-      inversionText.textContent = "—";
-      chordSubtitle.textContent = `No playable close-position triad found in your fret window.`;
-      debugEl.textContent =
-`Strings: 3–2–1 only
-Try widening Max fret, increasing Max span, or moving the window up/down.
-Tried ${tried} candidates.`;
+    if (!voicing){
+      titleEl.textContent = `${name} (${roman})`;
+      invEl.textContent = "—";
+      subEl.textContent = "No playable voicing in window.";
       return;
     }
 
-    const [f3,f2,f1] = best.frets;
-    const [m3,m2,m1] = best.midis;
+    const [f3,f2,f1] = voicing.frets;
+    titleEl.textContent = `${name} (${roman})`;
+    invEl.textContent = inversionLabel(voicing.inv);
+    subEl.textContent = `frets (G–B–E): ${f3}–${f2}–${f1}`;
+  }
 
-    const move = prevFrets
-      ? (Math.abs(f3-prevFrets[0]) + Math.abs(f2-prevFrets[1]) + Math.abs(f1-prevFrets[2]))
-      : 0;
+  function computeNextFromCurrent(){
+    const { minF, maxF, span } = clampConstraints();
+    const prevFrets = currentVoicing ? currentVoicing.frets : null;
 
-    chordTitle.textContent = `${name}  (${roman})`;
-    inversionText.textContent = inversionLabel(best.inv);
-    chordSubtitle.textContent = `frets (G–B–E): ${f3}–${f2}–${f1}`;
+    const deg = chooseNextDegree(currentDegree);
+    const chordAbsPcs = triads[deg].map(x => pc(tonicPc + x));
+    const { best } = pickBestVoicing(chordAbsPcs, prevFrets, minF, maxF, span);
 
-    const { span } = clampConstraints();
+    nextDegree = deg;
+    nextVoicing = best;
+    formatChordPanel(nextDegree, nextVoicing, nextChordTitle, nextInversionText, nextChordSubtitle);
+  }
 
-    debugEl.textContent =
+  function applyNextAsCurrent(){
+    currentDegree = nextDegree;
+    currentVoicing = nextVoicing;
+
+    formatChordPanel(currentDegree, currentVoicing, chordTitle, inversionText, chordSubtitle);
+
+    // Debug info
+    if (!currentVoicing){
+      debugEl.textContent = "No playable voicing found. Adjust fret window/span.";
+    } else {
+      const [f3,f2,f1] = currentVoicing.frets;
+      const [m3,m2,m1] = currentVoicing.midis;
+
+      const move = (currentVoicing && nextVoicing && currentVoicing !== nextVoicing) ? 0 : 0; // placeholder; we show real move below
+      const spanNow = Math.max(f1,f2,f3) - Math.min(f1,f2,f3);
+      const { span } = clampConstraints();
+
+      debugEl.textContent =
 `Key: ${NOTE_NAMES_SHARP[tonicPc]} · Mode: ${mode.replace("_"," ")}
 Strings fixed: 3(G) → 2(B) → 1(E)
-Chord tones on strings: ${noteNameFromPc(m3)}  ${noteNameFromPc(m2)}  ${noteNameFromPc(m1)}
 Notes: ${midiToName(m3)} | ${midiToName(m2)} | ${midiToName(m1)}
 Frets: ${f3} | ${f2} | ${f1}
-Close-position span (max fret - min fret): ${Math.max(f1,f2,f3) - Math.min(f1,f2,f3)} (limit ${span})
-Candidates checked: ${tried}
-Movement this change (sum fret diffs): ${move}
-Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixed(2) : "—"}`;
-  }
-
-  function chooseAndApplyNewChord(){
-    const { minF, maxF, span } = clampConstraints();
-    const deg = chooseNextDegree(prevDegree);
-
-    // chordAbsPcs ordered as [root, third, fifth] absolute pitch classes
-    const chordAbsPcs = triads[deg].map(x => pc(tonicPc + x));
-
-    const { best, tried, cost } = pickBestVoicing(chordAbsPcs, prevFrets, minF, maxF, span);
-
-    prevDegree = deg;
-    prevFrets = best ? best.frets : prevFrets;
-
-    describe(deg, best, tried, cost);
-
-    if (chordOn.checked && best && audioCtx){
-      playTriad(nextNoteTime, best.midis);
+Close-position span: ${spanNow} (limit ${span})
+Next chord is shown on the right.`;
     }
+
+    // Optional chord sound on downbeat
+    if (chordOn.checked && currentVoicing && audioCtx){
+      playTriad(nextNoteTime, currentVoicing.midis);
+    }
+
+    // Immediately compute and display the next chord
+    computeNextFromCurrent();
   }
 
+  // ---------- Beat scheduling ----------
   function nextBeat(){
     const bpm = Math.max(30, Math.min(260, Number(bpmEl.value) || 92));
     const secondsPerBeat = 60.0 / bpm;
@@ -535,9 +577,9 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
     beatReadout.textContent = String(beatInBar + 1);
     barReadout.textContent = String(barCount + 1);
 
-    // Every 4 beats: pick new chord on the downbeat (beat 1)
+    // On downbeat (beat 1): promote NEXT -> CURRENT, then generate a new NEXT
     if (beatInBar === 0){
-      chooseAndApplyNewChord();
+      applyNextAsCurrent();
     }
   }
 
@@ -555,6 +597,7 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
     }
   }
 
+  // ---------- Start/Stop ----------
   function start(){
     if (isRunning) return;
     setKeyModeFromUI();
@@ -566,17 +609,25 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
     startBtn.disabled = true;
     stopBtn.disabled = false;
 
-    beatInBar = 3; // so first nextBeat -> 0 (beat 1)
+    beatInBar = 3; // so first nextBeat -> 0 (downbeat)
     barCount = 0;
-    prevDegree = null;
-    prevFrets = null;
+
+    currentDegree = null;
+    currentVoicing = null;
+
+    // Precompute NEXT immediately so it is always visible from the start
+    nextDegree = null;
+    nextVoicing = null;
+    formatChordPanel(null, null, chordTitle, inversionText, chordSubtitle);
+    formatChordPanel(null, null, nextChordTitle, nextInversionText, nextChordSubtitle);
 
     nextNoteTime = audioCtx.currentTime + 0.05;
 
-    chordTitle.textContent = "Running…";
-    inversionText.textContent = "—";
-    chordSubtitle.textContent = "Strings 1–2–3 only.";
-    debugEl.textContent = "—";
+    // Set an initial "next" using no previous frets (free choice in window),
+    // then on the first downbeat it becomes current.
+    computeNextFromCurrent();
+
+    debugEl.textContent = "Running… next chord is visible on the right.";
 
     timerID = setInterval(scheduler, lookahead);
   }
@@ -591,9 +642,14 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
 
     beatReadout.textContent = "–";
     barReadout.textContent = "–";
+
     chordTitle.textContent = "Stopped";
     inversionText.textContent = "—";
     chordSubtitle.textContent = "Press Start (or Space).";
+
+    nextChordTitle.textContent = "—";
+    nextInversionText.textContent = "—";
+    nextChordSubtitle.textContent = "—";
   }
 
   startBtn.addEventListener("click", start);
@@ -602,7 +658,13 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
   keySel.addEventListener("change", () => { if (!isRunning) setKeyModeFromUI(); });
   modeSel.addEventListener("change", () => { if (!isRunning) setKeyModeFromUI(); });
 
-  [minFretEl, maxFretEl, maxSpanEl].forEach(el => el.addEventListener("change", clampConstraints));
+  [minFretEl, maxFretEl, maxSpanEl].forEach(el => el.addEventListener("change", () => {
+    clampConstraints();
+    if (isRunning){
+      // re-evaluate NEXT immediately with new constraints
+      computeNextFromCurrent();
+    }
+  }));
 
   window.addEventListener("keydown", (e) => {
     if (e.code === "Space"){
@@ -610,8 +672,8 @@ Movement+position penalty (internal cost): ${Number.isFinite(cost) ? cost.toFixe
       isRunning ? stop() : start();
     }
   });
-
 })();
 </script>
 </body>
 </html>
+```
